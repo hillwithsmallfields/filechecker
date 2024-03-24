@@ -84,4 +84,5 @@ int main(int argc,
     if (out_fd != stdout) {
         fclose(out_fd);
     }
+    free(buffer);
 }
