@@ -7,7 +7,7 @@
 
 #define AMOUNT 1024 * 1024
 
-void check_file(const char *filename, char *buffer)
+int check_file(const char *filename, char *buffer)
 {
     int fd = open(filename, O_RDONLY);
     int found_top_bit_set = 0;
@@ -25,11 +25,9 @@ void check_file(const char *filename, char *buffer)
             }
         }
         close(fd);
-        if (found_top_bit_set > 0) {
-            printf("%s has %d top bits set\n", filename, found_top_bit_set);
-        }
+        return found_top_bit_set;
     } else {
-        fprintf(stderr, "Could not open %s\n", filename);
+        return 0;
     }
 }
 
@@ -37,25 +35,53 @@ void check_directory(const char *dirname, char *buffer)
 {
 }
 
+void check_file_or_directory(const char *filename, char *buffer, FILE *out_fd)
+{
+    struct stat statbuf;
+    if (stat(filename, &statbuf) == 0) {
+        if (statbuf.st_mode & S_IFREG) {
+            int tbs = check_file(filename, buffer);
+            int size = statbuf.st_size;
+            if (size > AMOUNT) {
+                size = AMOUNT;
+            }
+            if (tbs > 0) {
+                fprintf(out_fd, "%s,%d,%d,%f\n", filename, tbs, size, (float)tbs / (float)size);
+            }
+        } else if (statbuf.st_mode & S_IFDIR) {
+            if (filename[0] != '.') {
+                check_directory(filename, buffer);
+            }
+        }
+    } else {
+        printf("could not check %s\n", filename);
+    }
+}
+
 int main(int argc,
          char **argv)
 {
     int i;
+    char c;
     char *buffer = (char*)malloc(AMOUNT);
+    FILE *out_fd = stdout;
 
-    for (i = 1; i < argc; i++) {
-        struct stat statbuf;
-        const char *filename = argv[i];
-        if (stat(filename, &statbuf) == 0) {
-            if (statbuf.st_mode & S_IFREG) {
-                check_file(filename, buffer);
-            } else if (statbuf.st_mode & S_IFDIR) {
-                if (filename[0] != '.') {
-                    check_directory(filename, buffer);
-                }
+    while ((c = getopt(argc, argv, "a:o:")) != -1) {
+        switch (c)
+            {
+            case 'o':
+                out_fd = fopen(optarg, "w");
+                fprintf(out_fd, "filename,top_bit_count,size,proportion\n");
+                break;
+            case 'a':
+                out_fd = fopen(optarg, "a");
+                break;
             }
-        } else {
-            printf("could not check %s\n", filename);
-        }
+    }
+    for (i = optind; i < argc; i++) {
+        check_file_or_directory(argv[i], buffer, out_fd);
+    }
+    if (out_fd != stdout) {
+        fclose(out_fd);
     }
 }
